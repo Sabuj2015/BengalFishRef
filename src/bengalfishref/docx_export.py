@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
+import shutil
 import sqlite3
 from typing import Any
 
@@ -143,6 +144,7 @@ def _add_styled_table(doc: Document, caption: str, headers: list[str], rows: lis
 
 def _render_markdown_into_docx(doc: Document, md_text: str) -> None:
     lines = md_text.splitlines()
+    in_references = False
     i = 0
     while i < len(lines):
         raw = lines[i].rstrip()
@@ -151,6 +153,7 @@ def _render_markdown_into_docx(doc: Document, md_text: str) -> None:
         if not stripped or stripped == "---":
             continue
         if stripped.startswith("# "):
+            in_references = False
             p = doc.add_paragraph()
             p.paragraph_format.line_spacing = 1.3
             p.paragraph_format.space_after = Pt(10)
@@ -159,14 +162,17 @@ def _render_markdown_into_docx(doc: Document, md_text: str) -> None:
             r.font.name = "Times New Roman"
             r.font.size = Pt(15)
         elif stripped.startswith("## "):
+            heading_txt = stripped[3:].strip()
+            in_references = heading_txt.lower() == "references"
             p = doc.add_paragraph()
             p.paragraph_format.space_before = Pt(12)
             p.paragraph_format.space_after = Pt(4)
-            r = p.add_run(stripped[3:].strip())
+            r = p.add_run(heading_txt)
             r.bold = True
             r.font.name = "Times New Roman"
             r.font.size = Pt(13)
         elif stripped.startswith("### "):
+            in_references = False
             p = doc.add_paragraph()
             p.paragraph_format.space_before = Pt(8)
             p.paragraph_format.space_after = Pt(2)
@@ -190,6 +196,14 @@ def _render_markdown_into_docx(doc: Document, md_text: str) -> None:
             r.italic = True
             r.font.name = "Times New Roman"
             r.font.size = Pt(11.5)
+        elif in_references:
+            # Standard APA 7th / Wiley Molecular Ecology Resources hanging indent (0.5 in, zero bullets!)
+            ref_txt = stripped[2:].strip() if (stripped.startswith("* ") or stripped.startswith("- ")) else stripped
+            p = doc.add_paragraph()
+            p.paragraph_format.left_indent = Inches(0.5)
+            p.paragraph_format.first_line_indent = Inches(-0.5)
+            p.paragraph_format.space_after = Pt(6)
+            _add_formatted_runs(p, ref_txt, base_size_pt=12.0)
         elif stripped.startswith("* ") or stripped.startswith("- "):
             p = doc.add_paragraph(style="List Bullet")
             _add_formatted_runs(p, stripped[2:].strip(), base_size_pt=12.0)
@@ -366,7 +380,168 @@ def build_submission_docx_files(db_path: Path = DB_PATH) -> dict[str, str]:
     cl_out = DRAFT_DIR / "Cover_Letter_Molecular_Ecology_Resources.docx"
     cl_doc.save(str(cl_out))
 
-    return {"manuscript_docx": str(ms_out), "cover_letter_docx": str(cl_out)}
+    # 3. DG Co-Author Review Draft .docx (prepared for Prof. Dr. Md. Sagir Ahmed's review & approval)
+    dg_ms_md = (
+        "**[INTERNAL NIB REVIEW DRAFT — PREPARED FOR TAXONOMIC VALIDATION, JOINT CORRESPONDING AUTHORSHIP CONFIRMATION & SUBMISSION CLEARANCE BY RESPECTED DIRECTOR GENERAL]**\n\n"
+        + ms_md
+    )
+    dg_ms_path_md = DRAFT_DIR / "BengalFishRef_MER_DG_Review_Draft.md"
+    dg_ms_path_md.write_text(dg_ms_md, encoding="utf-8")
+
+    dg_doc = Document()
+    _set_base_styles(dg_doc, double_spaced=True)
+    _enable_continuous_line_numbers_and_page_footer(dg_doc)
+    _render_markdown_into_docx(dg_doc, dg_ms_md)
+    dg_doc.add_page_break()
+    h_dg_tbl = dg_doc.add_paragraph()
+    r_dgt = h_dg_tbl.add_run("Tables")
+    r_dgt.bold = True
+    r_dgt.font.name = "Times New Roman"
+    r_dgt.font.size = Pt(14)
+    _add_styled_table(
+        dg_doc,
+        "**Table 1.** Multi-locus mitochondrial sequence inventory and two-stage phylogenetic curation summary across 859 documented fish and commercial decapod species in `BengalFishRef v1.0`.",
+        ["Locus", "Species Covered", "Gold", "Silver", "Quarantined", "NUMT Stops", "Mislabeled Outliers", "Total Audited"],
+        t1_formatted,
+    )
+    _add_styled_table(
+        dg_doc,
+        "**Table 2.** *In silico* amplification success (%) and mean 3'-weighted mismatch penalty (*W_mm*) across 14 universal metabarcoding primer pairs evaluated on `BengalFishRef v1.0` templates (*n* = 25,300 tests).",
+        ["Primer Pair", "Locus", "Actinopterygii", "Elasmobranchii", "Crustacea", "Mean W_mm", "Templates Tested"],
+        t2_formatted,
+    )
+    _add_styled_table(
+        dg_doc,
+        "**Table 3.** Four-ecosystem simulated eDNA taxonomic classification benchmark at 0.5% read error (with 12% held-out regional dark taxa and 1,000-replicate 95% bootstrap confidence intervals).",
+        ["Ecosystem Assemblage", "Classifier", "Reference Condition", "Macro-F1 (95% CI)", "False-Positive Rate"],
+        t3_formatted,
+    )
+    dg_doc.add_page_break()
+    h_dg_fig = dg_doc.add_paragraph()
+    r_dgf = h_dg_fig.add_run("Figures and Figure Legends")
+    r_dgf.bold = True
+    r_dgf.font.name = "Times New Roman"
+    r_dgf.font.size = Pt(14)
+    for fname, legend in fig_specs:
+        fpath = FIG_DIR / fname
+        if fpath.exists():
+            pic_p = dg_doc.add_paragraph()
+            pic_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            pic_p.add_run().add_picture(str(fpath), width=Inches(6.2))
+            leg_p = dg_doc.add_paragraph()
+            leg_p.paragraph_format.line_spacing = 1.35
+            leg_p.paragraph_format.space_after = Pt(14)
+            _add_formatted_runs(leg_p, legend, base_size_pt=10.5)
+    dg_ms_out = DRAFT_DIR / "BengalFishRef_MER_DG_Review_Draft.docx"
+    dg_doc.save(str(dg_ms_out))
+
+    # 4. Printable 2-Page Executive Briefing & Phase-II Funding Proposal .docx for the Director General
+    brief_md_path = WORKSPACE / "00_Roadmap" / "DG_Briefing_National_BengalFishRef_Initiative.md"
+    brief_doc = Document()
+    _set_base_styles(brief_doc, double_spaced=False)
+    for section in brief_doc.sections:
+        section.top_margin = Inches(0.75)
+        section.bottom_margin = Inches(0.75)
+        section.left_margin = Inches(0.8)
+        section.right_margin = Inches(0.8)
+    _render_markdown_into_docx(brief_doc, brief_md_path.read_text(encoding="utf-8"))
+    _add_styled_table(
+        brief_doc,
+        "**Table 1.** Indicative 12–18 Month Phase-II Implementation & R&D Budget Plan for NIB (`BengalFishRef v2.0`).",
+        ["Component / Deliverable", "Key Institutional Activities at FBD-NIB", "Timeline", "Indicative Allocation (BDT)"],
+        [
+            [
+                "**1. Official NIB Portal (`bengalfishref.nib.gov.bd`)**",
+                "Subdomain DNS/SSL setup under `nib.gov.bd`, NIB/MoST branding, national `.ab1`/FASTA submission & QC portal",
+                "Months 1–2",
+                "0.50 Lakh (Existing NIB IT / Internal)",
+            ],
+            [
+                "**2. Top-50 Dark & Threatened Taxa Voucher Biobank (`NIB-FBD`)**",
+                "Field voucher collection (CR/EN carps, catfishes, guitarfishes), cryo-tissue archiving, DNA extraction & PCR (`COI`, `12S`, `16S`)",
+                "Months 2–10",
+                "5.50 Lakh",
+            ],
+            [
+                "**3. Mitogenome & Multi-Locus Reference Sequencing**",
+                "Sanger + Oxford Nanopore / Illumina mitogenome sequencing of priority unsequenced Bangladeshi dark taxa",
+                "Months 6–14",
+                "7.50 Lakh",
+            ],
+            [
+                "**4. Wet-Lab eDNA Assay & Export Authentication Pilot**",
+                "Bench validation of `MiFish-U-Bengal` & `Teleo-Bengal` on river/haor/Sundarbans water eDNA + shrimp/broodstock certification SOP",
+                "Months 8–18",
+                "4.50 Lakh",
+            ],
+            [
+                "**Total Indicative Phase-II R&D Investment**",
+                "**Permanent National Database + `NIB-FBD` Biobank + 2nd Q1 Paper + Accredited Bio-Service**",
+                "**18 Months**",
+                "**18.00 Lakh BDT**",
+            ],
+        ],
+    )
+    brief_out = WORKSPACE / "00_Roadmap" / "DG_Briefing_National_BengalFishRef_Initiative.docx"
+    brief_doc.save(str(brief_out))
+
+    # 5. Assemble Dedicated Target-Journal Submission Package Directory (Wiley Molecular Ecology Resources)
+    pkg_dir = WORKSPACE / "04_Manuscripts" / "Molecular_Ecology_Resources_Submission_Package"
+    pkg_figs = pkg_dir / "03_Figures"
+    pkg_supp = pkg_dir / "04_Supporting_Information"
+    pkg_figs.mkdir(parents=True, exist_ok=True)
+    pkg_supp.mkdir(parents=True, exist_ok=True)
+
+    shutil.copy2(cl_out, pkg_dir / "01_Cover_Letter_MER.docx")
+    shutil.copy2(ms_out, pkg_dir / "02_Main_Manuscript_BengalFishRef_MER.docx")
+
+    fig_rename_map = {
+        "Fig1_Taxonomic_Coverage_and_DarkTaxa_BDTPI": "Figure_1_Taxonomic_Coverage_and_BDTPI",
+        "Fig2_Sequence_Hygiene_and_Barcode_Gap": "Figure_2_Sequence_Hygiene_and_Barcode_Gap",
+        "Fig3_eDNA_Primer_Coverage_Heatmap": "Figure_3_eDNA_Primer_Coverage_Heatmap",
+        "Fig4_Simulated_eDNA_Classifier_Benchmark": "Figure_4_Simulated_eDNA_Classifier_Benchmark",
+    }
+    for src_stem, dst_stem in fig_rename_map.items():
+        for ext in (".pdf", ".png"):
+            src_f = FIG_DIR / f"{src_stem}{ext}"
+            if src_f.exists():
+                shutil.copy2(src_f, pkg_figs / f"{dst_stem}{ext}")
+
+    tab_dir = WORKSPACE / "04_Manuscripts" / "tables"
+    for s_name in (
+        "Table_S1_BengalFishRef_DarkTaxa_BDTPI.tsv",
+        "Table_S2_Sequence_Audit_Summary.tsv",
+        "Table_S3_Primer_Thermodynamic_Benchmark.tsv",
+        "Table_S4_Mock_Community_Benchmark_95CI.tsv",
+    ):
+        src_t = tab_dir / s_name
+        if src_t.exists():
+            shutil.copy2(src_t, pkg_supp / s_name)
+
+    manifest_md = (
+        "# Wiley ScholarOne Submission Package — *Molecular Ecology Resources*\n\n"
+        "**Article Type:** Resource Article  \n"
+        "**Open Access / APC Selection:** Standard Subscription (Hybrid — \\$0 APC)  \n"
+        "**Permanent Zenodo DOI:** https://doi.org/10.5281/zenodo.24299726  \n"
+        "**Live Web Portal:** https://sabuj2015.github.io/BengalFishRef/  \n"
+        "**Source Repository:** https://github.com/Sabuj2015/BengalFishRef  \n\n"
+        "## Exact File-to-ScholarOne Upload Mapping\n\n"
+        "| Package Path | ScholarOne File Designation |\n"
+        "| :--- | :--- |\n"
+        "| `01_Cover_Letter_MER.docx` | **Cover Letter** |\n"
+        "| `02_Main_Manuscript_BengalFishRef_MER.docx` | **Main Document** *(double-spaced, continuous line numbers, APA 7th hanging-indent references, Main Tables 1–3)* |\n"
+        "| `03_Figures/Figure_1_*.pdf` .. `Figure_4_*.pdf` | **Figure** *(upload vector `.pdf` or 600-DPI `.png`)* |\n"
+        "| `04_Supporting_Information/Table_S1_*.tsv` .. `Table_S4_*.tsv` | **Supporting Information** |\n"
+    )
+    (pkg_dir / "00_ScholarOne_Upload_Manifest.md").write_text(manifest_md, encoding="utf-8")
+
+    return {
+        "submission_package_dir": str(pkg_dir),
+        "manuscript_docx": str(ms_out),
+        "dg_review_manuscript_docx": str(dg_ms_out),
+        "dg_executive_briefing_docx": str(brief_out),
+        "cover_letter_docx": str(cl_out),
+    }
 
 
 if __name__ == "__main__":

@@ -92,7 +92,7 @@ STANDARD_EDNA_PRIMERS: tuple[PrimerPair, ...] = (
         rev_seq="GTACACTTACCATGTTACGACTT",
         min_amplicon=240,
         max_amplicon=360,
-        reference="Bylemans et al. (2018) Metabarcoding Metagenom.",
+        reference="Bylemans et al. (2018) Ecol. Evol.",
     ),
     PrimerPair(
         name="EcoPrimers-12S-V5",
@@ -112,7 +112,7 @@ STANDARD_EDNA_PRIMERS: tuple[PrimerPair, ...] = (
         rev_seq="GGGTATCTAATCCCAGTTTG",
         min_amplicon=150,
         max_amplicon=250,
-        reference="Valsecchi et al. (2020) Mol. Ecol. Resour.",
+        reference="Valsecchi et al. (2020) Environ. DNA",
     ),
     PrimerPair(
         name="Tele02",
@@ -132,7 +132,7 @@ STANDARD_EDNA_PRIMERS: tuple[PrimerPair, ...] = (
         rev_seq="CGCTGTTATCCCTADRGTAACT",
         min_amplicon=160,
         max_amplicon=280,
-        reference="Berry et al. (2017) Mol. Ecol. Resour.",
+        reference="Berry et al. (2017) Ecol. Evol.",
     ),
     PrimerPair(
         name="MarVer3",
@@ -142,7 +142,7 @@ STANDARD_EDNA_PRIMERS: tuple[PrimerPair, ...] = (
         rev_seq="GGATTGCGCTGTTATCCC",
         min_amplicon=190,
         max_amplicon=300,
-        reference="Valsecchi et al. (2020) Mol. Ecol. Resour.",
+        reference="Valsecchi et al. (2020) Environ. DNA",
     ),
     PrimerPair(
         name="Crust16S",
@@ -152,7 +152,7 @@ STANDARD_EDNA_PRIMERS: tuple[PrimerPair, ...] = (
         rev_seq="ATTACGCTGTTATCCCTAAAG",
         min_amplicon=130,
         max_amplicon=240,
-        reference="Berry et al. (2017) Mol. Ecol. Resour.",
+        reference="Berry et al. (2017) Ecol. Evol.",
     ),
     PrimerPair(
         name="Deca16S",
@@ -162,7 +162,7 @@ STANDARD_EDNA_PRIMERS: tuple[PrimerPair, ...] = (
         rev_seq="CTCCGGTTTGAACTCAGATCA",
         min_amplicon=420,
         max_amplicon=580,
-        reference="Palumbi / Bracken-Grissom Decapod 16S",
+        reference="Palumbi (1996) Mol. Systematics",
     ),
     PrimerPair(
         name="MiDeca",
@@ -172,7 +172,7 @@ STANDARD_EDNA_PRIMERS: tuple[PrimerPair, ...] = (
         rev_seq="ACGCTGTTATCCCTAAAGT",
         min_amplicon=135,
         max_amplicon=215,
-        reference="Komai et al. (2019) Mar. Biodivers.",
+        reference="Komai et al. (2019) Metabarcoding Metagenom.",
     ),
     PrimerPair(
         name="Leray-COI",
