@@ -292,7 +292,7 @@ def build_submission_docx_files(db_path: Path = DB_PATH) -> dict[str, str]:
         """
         SELECT ecosystem, classifier, db_condition, f1_macro, f1_ci_low, f1_ci_high, false_positive_exotic_rate
         FROM benchmark_results
-        WHERE error_rate = 0.005 AND classifier != 'Naive_Prior_Baseline'
+        WHERE marker = 'COI' AND error_rate = 0.005 AND classifier != 'Naive_Prior_Baseline'
         ORDER BY ecosystem, classifier, db_condition DESC
         """
     ).fetchall()

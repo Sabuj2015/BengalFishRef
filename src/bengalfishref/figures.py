@@ -210,7 +210,9 @@ def generate_all_figures_and_tables(db_path: Path = DB_PATH) -> dict[str, str]:
     if not df_bm_all.empty:
         df_bm_all.to_csv(TAB_DIR / "Table_S4_Mock_Community_Benchmark_95CI.tsv", sep="\t", index=False)
         df_bm = df_bm_all[
-            (df_bm_all["error_rate"] == 0.005) & (df_bm_all["classifier"] != "Naive_Prior_Baseline")
+            (df_bm_all["marker"] == "COI")
+            & (df_bm_all["error_rate"] == 0.005)
+            & (df_bm_all["classifier"] != "Naive_Prior_Baseline")
         ].copy()
         label_map = {
             "Kmer_MultinomialNB": "8-mer Naive Bayes\n(QIIME2/RDP)",
