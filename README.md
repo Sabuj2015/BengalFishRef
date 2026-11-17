@@ -1,8 +1,12 @@
 # BengalFishRef (`v1.0.0`)
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24299726.svg)](https://doi.org/10.5281/zenodo.24299726)
+
 **A Phylogenetically Audited Mitochondrial Reference Atlas, Metabarcoding Primer Benchmark, and Serverless Identification Platform for Fishes and Commercial Crustaceans of Bangladesh and the Bay of Bengal**
 
-Developed by **Sabuj Biswas**, Fisheries Biotechnology Division, National Institute of Biotechnology (FBD-NIB), Bangladesh.
+Developed by **Sabuj Biswas** (ORCID: `0000-0003-3320-0714`), Fisheries Biotechnology Division, National Institute of Biotechnology (FBD-NIB), Bangladesh.
+- **Live Web Portal:** https://sabuj2015.github.io/BengalFishRef/
+- **Zenodo Dataset & Releases (`QIIME2`, `DADA2`, `SINTAX`, `BLAST+`):** https://doi.org/10.5281/zenodo.24299726
 
 ---
 
