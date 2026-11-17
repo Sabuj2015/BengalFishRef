@@ -118,6 +118,7 @@ def export_bioinformatics_releases(
         "creators": [
             {
                 "name": "Biswas, Sabuj",
+                "orcid": "0000-0003-3320-0714",
                 "affiliation": "Fisheries Biotechnology Division, National Institute of Biotechnology (NIB), Bangladesh",
             }
         ],
