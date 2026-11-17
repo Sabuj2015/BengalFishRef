@@ -32,7 +32,7 @@ uv run bengalfishref export-all
 ## Deploying the Serverless Web Portal Free on GitHub Pages
 1. Create a new public GitHub repository named `BengalFishRef` and push this folder (`main` branch).
 2. In GitHub **Settings → Pages → Build and deployment**, set **Source** to **GitHub Actions**.
-3. `.github/workflows/deploy-pages.yml` automatically runs `uv run pytest -v` and publishes `./web` to `https://<your-username>.github.io/BengalFishRef/`.
+3. `.github/workflows/deploy-pages.yml` automatically runs `uv run pytest -v` and publishes `./web` to `https://sabuj2015.github.io/BengalFishRef/`.
 
 ## Citation & License
 Code released under the **MIT License**; curated reference metadata and taxonomy distributions released under **CC-BY 4.0**.
