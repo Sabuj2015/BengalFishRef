@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BengalFishRef v1.0 | FBD-NIB Bangladesh Barcode &amp; eDNA Reference Atlas</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="hero">
+    <div class="container">
+      <div class="badge">FBD-NIB • National Institute of Biotechnology, Bangladesh</div>
+      <h1>BengalFishRef <span>v1.0</span></h1>
+      <p>Phylogenetically Audited Mitochondrial Reference Atlas, eDNA Primer Benchmark &amp; Serverless Sequence Validator for Fishes and Commercial Crustaceans of Bangladesh &amp; the Bay of Bengal</p>
+      <div class="kpi-grid" id="kpiGrid"></div>
+    </div>
+  </header>
+
+  <main class="container">
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="atlasTab">1. Species &amp; Dark-Taxa Atlas</button>
+      <button class="tab-btn" data-tab="idTab">2. Sequence ID &amp; Lab NUMT/QC Validator</button>
+      <button class="tab-btn" data-tab="primerTab">3. 14-Primer eDNA Mismatch Explorer</button>
+    </nav>
+
+    <section id="atlasTab" class="tab-panel active">
+      <div class="controls">
+        <input type="text" id="searchInput" placeholder="Search scientific, Bengali (e.g. Ilish, Rui, Bagda), English, or family name..." />
+        <select id="zoneFilter">
+          <option value="">All Bangladesh Zones</option>
+          <option value="GBM_Freshwater">GBM Freshwater Rivers &amp; Haors</option>
+          <option value="Sundarbans_Estuarine">Sundarbans Mangrove-Estuarine</option>
+          <option value="Bay_of_Bengal_Marine">Bay of Bengal Marine</option>
+        </select>
+        <select id="groupFilter">
+          <option value="">All Taxonomic Groups</option>
+          <option value="Actinopterygii">Ray-finned Fishes (Actinopterygii)</option>
+          <option value="Elasmobranchii">Sharks &amp; Rays (Elasmobranchii)</option>
+          <option value="Crustacea">Shrimps, Prawns &amp; Crabs (Crustacea)</option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table id="atlasTable">
+          <thead>
+            <tr>
+              <th>Valid Species</th>
+              <th>Bengali / English</th>
+              <th>Group &amp; Family</th>
+              <th>IUCN</th>
+              <th>COI</th>
+              <th>12S</th>
+              <th>16S</th>
+              <th>Mitogenome</th>
+              <th>BDTPI Priority</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="idTab" class="tab-panel">
+      <div class="card">
+        <h2>Client-Side Sequence Identifier &amp; Mitochondrial NUMT Hygiene Check</h2>
+        <p class="muted">Runs 100% in your browser (zero server upload). Checks length, IUPAC ambiguity, vertebrate (<code>transl_table=2</code>) &amp; crustacean (<code>transl_table=5</code>) internal stop codons, and 8-mer + alignment similarity against Gold/Silver vouchers.</p>
+        <textarea id="seqInput" rows="6" placeholder=">Sample_FBD_NIB_01&#10;Paste COI, 12S, 16S, or Cytb FASTA / raw nucleotide sequence here..."></textarea>
+        <div class="btn-row">
+          <button id="runIdBtn" class="primary-btn">Audit &amp; Identify Sequence</button>
+          <button id="loadDemoBtn" class="secondary-btn">Load Demo Sequence</button>
+        </div>
+        <div id="idResults" class="results-box"></div>
+      </div>
+    </section>
+
+    <section id="primerTab" class="tab-panel">
+      <div class="card">
+        <h2>Standard eDNA Metabarcoding Primer Benchmark (14 Universal Primer Sets)</h2>
+        <div class="table-wrap">
+          <table id="primerTable">
+            <thead>
+              <tr>
+                <th>Primer Pair</th>
+                <th>Marker</th>
+                <th>Target Clade</th>
+                <th>Forward (5'→3')</th>
+                <th>Reverse (5'→3')</th>
+                <th>In Silico Coverage</th>
+                <th>Reference</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      Developed by <strong>Sabuj Biswas</strong>, Fisheries Biotechnology Division, National Institute of Biotechnology (FBD-NIB), Bangladesh • Open Science Release (CC-BY 4.0 / MIT)
+    </div>
+  </footer>
+
+  <script src="data/bundle.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
