@@ -1,4 +1,4 @@
-"""Export publication-formatted Wiley ScholarOne Word (.docx) manuscript & cover letter with line numbers."""
+"""Export publication-formatted Wiley Molecular Ecology Resources Word (.docx) manuscript & cover letter with line numbers."""
 
 from __future__ import annotations
 
@@ -21,9 +21,59 @@ DB_PATH = WORKSPACE / "02_Data" / "processed" / "bengalfishref.sqlite"
 DRAFT_DIR = WORKSPACE / "04_Manuscripts" / "drafts"
 FIG_DIR = WORKSPACE / "04_Manuscripts" / "figures"
 
+_SUP_DIGITS = str.maketrans("0123456789+-", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻")
+
+
+def _clean_inline_latex(text: str) -> str:
+    """Convert inline LaTeX math expressions to clean Unicode/Markdown without stray '$' or backslashes."""
+    s = text.replace("\\$", "__ESCAPED_DOLLAR__")
+
+    def _replace_math(match: re.Match[str]) -> str:
+        expr = match.group(1)
+        # Convert \text{...} -> ...
+        expr = re.sub(r"\\text\{([^}]*)\}", r"\1", expr)
+        # Convert 10^{-5} -> 10⁻⁵
+        expr = re.sub(
+            r"\^\{([0-9+\-]+)\}",
+            lambda m: m.group(1).translate(_SUP_DIGITS),
+            expr,
+        )
+        # Convert subscripts _{...} -> _...
+        expr = re.sub(r"_\{([^}]*)\}", r"_\1", expr)
+        expr = (
+            expr.replace("\\cdot", "×")
+            .replace("\\times", "×")
+            .replace("\\le", "≤")
+            .replace("\\ge", "≥")
+            .replace("\\in", "∈")
+            .replace("\\%", "%")
+        )
+        # Italicize single-letter statistical/mathematical variables (p, q, n, k, w, D, S, W)
+        if expr in ("k", "n", "p", "q"):
+            return f"*{expr}*"
+        expr = re.sub(r"\b([npqk])\s*=", r"*\1* =", expr)
+        return expr
+
+    # Preserve $^{...}$ superscript markers used for affiliations by temporarily shielding them
+    sup_map: list[str] = []
+
+    def _shield_sup(m: re.Match[str]) -> str:
+        idx = len(sup_map)
+        sup_map.append(m.group(0))
+        return f"__SUP_TOKEN_{idx}__"
+
+    s = re.sub(r"\$\^\{[^}]+\}\$", _shield_sup, s)
+    # Replace remaining inline $...$
+    s = re.sub(r"\$([^$]+)\$", _replace_math, s)
+
+    for idx, orig in enumerate(sup_map):
+        s = s.replace(f"__SUP_TOKEN_{idx}__", orig)
+
+    return s.replace("__ESCAPED_DOLLAR__", "$")
+
 
 def _enable_continuous_line_numbers_and_page_footer(doc: Document) -> None:
-    """Configure 1-inch margins, continuous ScholarOne line numbering, and centered footer page numbers."""
+    """Configure 1-inch margins, continuous ScholarOne/Wiley line numbering, and centered footer page numbers."""
     for section in doc.sections:
         section.top_margin = Inches(1.0)
         section.bottom_margin = Inches(1.0)
@@ -58,17 +108,8 @@ def _set_base_styles(doc: Document, double_spaced: bool = True) -> None:
 
 
 def _add_formatted_runs(paragraph: Any, text: str, base_size_pt: float = 12.0) -> None:
-    """Render inline Markdown (**bold**, *italic*, `code`, $^{sup}$) cleanly into Word runs."""
-    # Clean display math wrappers or LaTeX macros lightly for readable Word math strings
-    cleaned = (
-        text.replace("\\$", "$")
-        .replace("\\cdot", "×")
-        .replace("\\le", "≤")
-        .replace("\\ge", "≥")
-        .replace("\\times", "×")
-        .replace("\\text{BDTPI}", "BDTPI")
-    )
-    # Tokenize **bold**, *italic*, `code`, and $^{...}$
+    """Render inline Markdown (**bold**, *italic*, `span`, $^{sup}$) cleanly in uniform Times New Roman."""
+    cleaned = _clean_inline_latex(text)
     token_re = re.compile(r"(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\$\^\{[^}]+\}\$)")
     pos = 0
     for m in token_re.finditer(cleaned):
@@ -79,14 +120,16 @@ def _add_formatted_runs(paragraph: Any, text: str, base_size_pt: float = 12.0) -
         tok = m.group(0)
         if tok.startswith("**") and tok.endswith("**"):
             inner = tok[2:-2]
-            # Check nested italics inside bold (e.g., ***Species*** or **text *Species***)
-            sub_parts = re.split(r"(\*[^*]+\*)", inner)
+            sub_parts = re.split(r"(\*[^*]+\*|`[^`]+`)", inner)
             for sp in sub_parts:
                 if not sp:
                     continue
-                r = paragraph.add_run(sp[1:-1] if (sp.startswith("*") and sp.endswith("*")) else sp)
+                is_ital = sp.startswith("*") and sp.endswith("*")
+                is_code = sp.startswith("`") and sp.endswith("`")
+                txt_val = sp[1:-1] if (is_ital or is_code) else sp
+                r = paragraph.add_run(txt_val)
                 r.bold = True
-                if sp.startswith("*") and sp.endswith("*"):
+                if is_ital:
                     r.italic = True
                 r.font.name = "Times New Roman"
                 r.font.size = Pt(base_size_pt)
@@ -96,9 +139,10 @@ def _add_formatted_runs(paragraph: Any, text: str, base_size_pt: float = 12.0) -
             r.font.name = "Times New Roman"
             r.font.size = Pt(base_size_pt)
         elif tok.startswith("`") and tok.endswith("`"):
+            # Render inline spans in standard Times New Roman per Wiley journal typography
             r = paragraph.add_run(tok[1:-1])
-            r.font.name = "Courier New"
-            r.font.size = Pt(max(base_size_pt - 1.5, 9.5))
+            r.font.name = "Times New Roman"
+            r.font.size = Pt(base_size_pt)
         elif tok.startswith("$^{") and tok.endswith("}$"):
             r = paragraph.add_run(tok[3:-2])
             r.font.superscript = True
@@ -188,7 +232,10 @@ def _render_markdown_into_docx(doc: Document, md_text: str) -> None:
                 .replace("\\cdot", " × ")
                 .replace("S_{\\text{cons}}", "S_cons")
                 .replace("S_{\\text{comm}}", "S_comm")
-                .replace("\\sum_{m \\in \\{\\text{COI}, \\text{12S}, \\text{16S}, \\text{Mitogenome}\\}} w_m D_m", "Σ (w_m × D_m)")
+                .replace(
+                    "\\sum_{m \\in \\{\\text{COI}, \\text{12S}, \\text{16S}, \\text{Mitogenome}\\}} w_m D_m",
+                    "Σ (w_m × D_m), m ∈ {COI, 12S, 16S, Mitogenome}",
+                )
             )
             p = doc.add_paragraph()
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -213,7 +260,7 @@ def _render_markdown_into_docx(doc: Document, md_text: str) -> None:
 
 
 def build_submission_docx_files(db_path: Path = DB_PATH) -> dict[str, str]:
-    """Generate ScholarOne-ready Manuscript (.docx) and Cover Letter (.docx)."""
+    """Generate Wiley Molecular Ecology Resources Manuscript (.docx), Cover Letter (.docx), and Submission Package."""
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
 
@@ -262,7 +309,7 @@ def build_submission_docx_files(db_path: Path = DB_PATH) -> dict[str, str]:
     ]
     _add_styled_table(
         ms_doc,
-        "**Table 1.** Multi-locus mitochondrial sequence inventory and two-stage phylogenetic curation summary across 859 documented fish and commercial decapod species in `BengalFishRef v1.0`.",
+        "**Table 1.** Multi-locus mitochondrial sequence inventory and two-stage phylogenetic curation summary across 859 documented fish and commercial decapod species in BengalFishRef v1.0.",
         ["Locus", "Species Covered", "Gold", "Silver", "Quarantined", "NUMT Stops", "Mislabeled Outliers", "Total Audited"],
         t1_formatted,
     )
@@ -284,7 +331,7 @@ def build_submission_docx_files(db_path: Path = DB_PATH) -> dict[str, str]:
     ).fetchall()
     t2_formatted = [
         [
-            f"`{r['primer_name']}`",
+            r["primer_name"],
             r["marker"],
             f"{r['act_pct']}%" if r["act_pct"] is not None else "—",
             f"{r['ela_pct']}%" if r["ela_pct"] is not None else "—",
@@ -296,7 +343,7 @@ def build_submission_docx_files(db_path: Path = DB_PATH) -> dict[str, str]:
     ]
     _add_styled_table(
         ms_doc,
-        "**Table 2.** *In silico* amplification success (%) and mean 3'-weighted mismatch penalty (*W_mm*) across 14 universal metabarcoding primer pairs evaluated on `BengalFishRef v1.0` templates (*n* = 25,300 tests).",
+        "**Table 2.** *In silico* amplification success (%) and mean 3'-weighted mismatch penalty (*W*_mm) across 14 universal metabarcoding primer pairs evaluated on BengalFishRef v1.0 templates (*n* = 25,300 tests).",
         ["Primer Pair", "Locus", "Actinopterygii", "Elasmobranchii", "Crustacea", "Mean W_mm", "Templates Tested"],
         t2_formatted,
     )
@@ -338,11 +385,11 @@ def build_submission_docx_files(db_path: Path = DB_PATH) -> dict[str, str]:
     fig_specs = [
         (
             "Fig1_Taxonomic_Coverage_and_DarkTaxa_BDTPI.png",
-            "**Figure 1.** **(A)** Species-level molecular reference coverage across five mitochondrial loci (`COI`, `12S`, `16S`, `Cytb`, and complete mitogenomes) for 859 documented Actinopterygii (*n* = 734), Elasmobranchii (*n* = 79), and commercial Crustacea (*n* = 46) of Bangladesh and the northern Bay of Bengal. **(B)** Highest-priority families (*n* ≥ 3 species) ranked by mean Bengal Dark-Taxa Priority Index (BDTPI) for targeted voucher sequencing.",
+            "**Figure 1.** **(A)** Species-level molecular reference coverage across five mitochondrial loci (COI, 12S, 16S, Cytb, and complete mitogenomes) for 859 documented Actinopterygii (*n* = 734), Elasmobranchii (*n* = 79), and commercial Crustacea (*n* = 46) of Bangladesh and the northern Bay of Bengal. **(B)** Highest-priority families (*n* ≥ 3 species) ranked by mean Bengal Dark-Taxa Priority Index (BDTPI) for targeted voucher sequencing.",
         ),
         (
             "Fig2_Sequence_Hygiene_and_Barcode_Gap.png",
-            "**Figure 2.** **(A)** Three-tier curation outcomes (`Gold`, `Silver`, `Quarantined`) across 27,467 public mitochondrial accessions. **(B)** Kimura 2-parameter (K2P) intraspecific versus nearest heterospecific distance distribution across `COI` records, illustrating clear separation of concordant vouchers (*n* = 9,503), putative South Asian cryptic lineages (*n* = 2,087), and quarantined mislabeled GenBank outliers (*n* = 452) clustering near 0% heterospecific divergence.",
+            "**Figure 2.** **(A)** Three-tier curation outcomes (Gold, Silver, Quarantined) across 27,467 public mitochondrial accessions. **(B)** Kimura 2-parameter (K2P) intraspecific versus nearest heterospecific distance distribution across COI records, illustrating clear separation of concordant vouchers (*n* = 9,503), putative South Asian cryptic lineages (*n* = 2,087), and quarantined mislabeled GenBank outliers (*n* = 452) clustering near 0% heterospecific divergence.",
         ),
         (
             "Fig3_eDNA_Primer_Coverage_Heatmap.png",
@@ -350,7 +397,7 @@ def build_submission_docx_files(db_path: Path = DB_PATH) -> dict[str, str]:
         ),
         (
             "Fig4_Simulated_eDNA_Classifier_Benchmark.png",
-            "**Figure 4.** Simulated multi-ecosystem eDNA taxonomic assignment benchmark (0.5% read error, 95% CIs across four Bangladeshi assemblages) comparing unfiltered public GenBank against curated `BengalFishRef v1.0`: **(A)** species-level Macro-F1 and **(B)** suppression of false-positive / mislabeled species calls.",
+            "**Figure 4.** Simulated multi-ecosystem eDNA taxonomic assignment benchmark (0.5% read error, 95% CIs across four Bangladeshi assemblages) comparing unfiltered public GenBank against curated BengalFishRef v1.0: **(A)** species-level Macro-F1 and **(B)** suppression of false-positive / mislabeled species calls.",
         ),
     ]
     for fname, legend in fig_specs:
@@ -400,13 +447,13 @@ def build_submission_docx_files(db_path: Path = DB_PATH) -> dict[str, str]:
     r_dgt.font.size = Pt(14)
     _add_styled_table(
         dg_doc,
-        "**Table 1.** Multi-locus mitochondrial sequence inventory and two-stage phylogenetic curation summary across 859 documented fish and commercial decapod species in `BengalFishRef v1.0`.",
+        "**Table 1.** Multi-locus mitochondrial sequence inventory and two-stage phylogenetic curation summary across 859 documented fish and commercial decapod species in BengalFishRef v1.0.",
         ["Locus", "Species Covered", "Gold", "Silver", "Quarantined", "NUMT Stops", "Mislabeled Outliers", "Total Audited"],
         t1_formatted,
     )
     _add_styled_table(
         dg_doc,
-        "**Table 2.** *In silico* amplification success (%) and mean 3'-weighted mismatch penalty (*W_mm*) across 14 universal metabarcoding primer pairs evaluated on `BengalFishRef v1.0` templates (*n* = 25,300 tests).",
+        "**Table 2.** *In silico* amplification success (%) and mean 3'-weighted mismatch penalty (*W*_mm) across 14 universal metabarcoding primer pairs evaluated on BengalFishRef v1.0 templates (*n* = 25,300 tests).",
         ["Primer Pair", "Locus", "Actinopterygii", "Elasmobranchii", "Crustacea", "Mean W_mm", "Templates Tested"],
         t2_formatted,
     )
@@ -447,18 +494,18 @@ def build_submission_docx_files(db_path: Path = DB_PATH) -> dict[str, str]:
     _render_markdown_into_docx(brief_doc, brief_md_path.read_text(encoding="utf-8"))
     _add_styled_table(
         brief_doc,
-        "**Table 1.** Indicative 12–18 Month Phase-II Implementation & R&D Budget Plan for NIB (`BengalFishRef v2.0`).",
+        "**Table 1.** Indicative 12–18 Month Phase-II Implementation & R&D Budget Plan for NIB (BengalFishRef v2.0).",
         ["Component / Deliverable", "Key Institutional Activities at FBD-NIB", "Timeline", "Indicative Allocation (BDT)"],
         [
             [
-                "**1. Official NIB Portal (`bengalfishref.nib.gov.bd`)**",
-                "Subdomain DNS/SSL setup under `nib.gov.bd`, NIB/MoST branding, national `.ab1`/FASTA submission & QC portal",
+                "**1. Official NIB Portal (bengalfishref.nib.gov.bd)**",
+                "Subdomain DNS/SSL setup under nib.gov.bd, NIB/MoST branding, national .ab1/FASTA submission & QC portal",
                 "Months 1–2",
                 "0.50 Lakh (Existing NIB IT / Internal)",
             ],
             [
-                "**2. Top-50 Dark & Threatened Taxa Voucher Biobank (`NIB-FBD`)**",
-                "Field voucher collection (CR/EN carps, catfishes, guitarfishes), cryo-tissue archiving, DNA extraction & PCR (`COI`, `12S`, `16S`)",
+                "**2. Top-50 Dark & Threatened Taxa Voucher Biobank (NIB-FBD)**",
+                "Field voucher collection (CR/EN carps, catfishes, guitarfishes), cryo-tissue archiving, DNA extraction & PCR (COI, 12S, 16S)",
                 "Months 2–10",
                 "5.50 Lakh",
             ],
@@ -470,13 +517,13 @@ def build_submission_docx_files(db_path: Path = DB_PATH) -> dict[str, str]:
             ],
             [
                 "**4. Wet-Lab eDNA Assay & Export Authentication Pilot**",
-                "Bench validation of `MiFish-U-Bengal` & `Teleo-Bengal` on river/haor/Sundarbans water eDNA + shrimp/broodstock certification SOP",
+                "Bench validation of MiFish-U-Bengal & Teleo-Bengal on river/haor/Sundarbans water eDNA + shrimp/broodstock certification SOP",
                 "Months 8–18",
                 "4.50 Lakh",
             ],
             [
                 "**Total Indicative Phase-II R&D Investment**",
-                "**Permanent National Database + `NIB-FBD` Biobank + 2nd Q1 Paper + Accredited Bio-Service**",
+                "**Permanent National Database + NIB-FBD Biobank + 2nd Q1 Paper + Accredited Bio-Service**",
                 "**18 Months**",
                 "**18.00 Lakh BDT**",
             ],
@@ -496,7 +543,7 @@ def build_submission_docx_files(db_path: Path = DB_PATH) -> dict[str, str]:
     shutil.copy2(ms_out, pkg_dir / "02_Main_Manuscript_BengalFishRef_MER.docx")
 
     fig_rename_map = {
-        "Fig1_Taxonomic_Coverage_and_DarkTaxa_BDTPI": "Figure_1_Taxonomic_Coverage_and_BDTPI",
+        "Fig1_Taxonomic_Coverage_and_DarkTaxa_BDTPI": "Figure_1_Taxonomic_Coverage_and_DarkTaxa_BDTPI",
         "Fig2_Sequence_Hygiene_and_Barcode_Gap": "Figure_2_Sequence_Hygiene_and_Barcode_Gap",
         "Fig3_eDNA_Primer_Coverage_Heatmap": "Figure_3_eDNA_Primer_Coverage_Heatmap",
         "Fig4_Simulated_eDNA_Classifier_Benchmark": "Figure_4_Simulated_eDNA_Classifier_Benchmark",
@@ -518,21 +565,68 @@ def build_submission_docx_files(db_path: Path = DB_PATH) -> dict[str, str]:
         if src_t.exists():
             shutil.copy2(src_t, pkg_supp / s_name)
 
-    manifest_md = (
-        "# Wiley ScholarOne Submission Package — *Molecular Ecology Resources*\n\n"
-        "**Article Type:** Resource Article  \n"
-        "**Open Access / APC Selection:** Standard Subscription (Hybrid — \\$0 APC)  \n"
-        "**Permanent Zenodo DOI:** https://doi.org/10.5281/zenodo.24299726  \n"
-        "**Live Web Portal:** https://sabuj2015.github.io/BengalFishRef/  \n"
-        "**Source Repository:** https://github.com/Sabuj2015/BengalFishRef  \n\n"
-        "## Exact File-to-ScholarOne Upload Mapping\n\n"
-        "| Package Path | ScholarOne File Designation |\n"
-        "| :--- | :--- |\n"
-        "| `01_Cover_Letter_MER.docx` | **Cover Letter** |\n"
-        "| `02_Main_Manuscript_BengalFishRef_MER.docx` | **Main Document** *(double-spaced, continuous line numbers, APA 7th hanging-indent references, Main Tables 1–3)* |\n"
-        "| `03_Figures/Figure_1_*.pdf` .. `Figure_4_*.pdf` | **Figure** *(upload vector `.pdf` or 600-DPI `.png`)* |\n"
-        "| `04_Supporting_Information/Table_S1_*.tsv` .. `Table_S4_*.tsv` | **Supporting Information** |\n"
-    )
+    manifest_md = """# Wiley *Molecular Ecology Resources* (`ISSN 1755-0998`) — Finalized Submission Guide & Upload Manifest
+
+**Submission Portal:** Wiley Research Exchange (`https://wiley.atyponrex.com/journal/MEN`) *(linked from https://onlinelibrary.wiley.com/page/journal/17550998/homepage/forauthors.html)*  
+**Article Category:** `Resource Article`  
+**Open Access / Licensing Choice:** **Standard Subscription (Hybrid — \\$0 APC)** *(select subscription publishing at submission/acceptance so zero Article Processing Charges apply)*  
+**Permanent Zenodo Dataset DOI:** https://doi.org/10.5281/zenodo.24299726  
+**Live Serverless Web Portal:** https://sabuj2015.github.io/BengalFishRef/  
+**Public Source Repository:** https://github.com/Sabuj2015/BengalFishRef  
+
+---
+
+## 1. Exact File-to-Portal Upload Mapping
+
+| Package Path | Portal File Designation | Author-Guideline Compliance Verified |
+| :--- | :--- | :--- |
+| `01_Cover_Letter_MER.docx` *(preview: `.pdf`)* | **Cover Letter** | Addressed to Editor-in-Chief; Joint Corresponding Authors + ORCIDs; \\$0-APC hybrid note; Nagoya Benefit-Sharing summary |
+| `02_Main_Manuscript_BengalFishRef_MER.docx` *(preview: `.pdf`)* | **Main Document** | `12 pt Times New Roman`, double-spaced, `1"` margins, continuous line numbers, `43`-char Running Title, `233`-word Abstract (`<= 250`), `6` non-overlapping alphabetical Keywords, `Data Accessibility and Benefit-Sharing Statement`, `Acknowledgements`, `Funding Information`, `Conflict of Interest Statement`, `Author Contributions` (CRediT), `ORCID`, `26` APA 7th `0.5"` hanging-indent references, `Supporting Information` captions, Main `Tables 1–3`, embedded `Figures 1–4` |
+| `03_Figures/Figure_1_*.pdf` .. `Figure_4_*.pdf` *(and `.png`)* | **Figure** | Vector `.pdf` + `600 DPI` `.png` (`Figure 1`–`Figure 4`, colorblind-safe Okabe–Ito palette) |
+| `04_Supporting_Information/Table_S1_*.tsv` .. `Table_S4_*.tsv` | **Supporting Information** | `Table S1` (859-species BDTPI checklist), `Table S2` (27,467-record audit + 1,032 quarantined), `Table S3` (14-primer thermodynamic benchmark), `Table S4` (20-slice eDNA classifier 95% CI benchmark) |
+
+---
+
+## 2. Copy-Paste Portal Metadata Blocks
+
+- **Full Title:**  
+  `BengalFishRef: A Phylogenetically Audited Mitochondrial Reference Atlas, Metabarcoding Primer Benchmark, and Serverless Identification Platform for Fishes and Commercial Crustaceans of Bangladesh and the Bay of Bengal`
+- **Running Title (`43 characters` incl. spaces; limit `<= 45`):**  
+  `BengalFishRef: Audited eDNA Reference Atlas`
+- **Keywords (`6` terms, alphabetical, zero overlap with Main Title words):**  
+  `cryptic diversity`, `Decapoda`, `DNA barcoding`, `environmental DNA (eDNA)`, `Ganges–Brahmaputra–Meghna delta`, `NUMT pseudogenes`
+- **Authors & ORCIDs:**
+  1. **Sabuj Biswas** *(First & Joint Corresponding Author)* — `sabuj@nib.gov.bd` — ORCID: `0000-0003-3320-0714` — Fisheries Biotechnology Division, National Institute of Biotechnology (NIB), Ganakbari, Ashulia, Savar, Dhaka-1349, Bangladesh.
+  2. **Md. Sagir Ahmed** *(Senior & Joint Corresponding Author)* — `dg@nib.gov.bd` / `sagir@du.ac.bd` — ORCID: `0000-0002-3932-8411` — Office of the Director General, National Institute of Biotechnology (NIB), Savar, Dhaka-1349, Bangladesh; Department of Zoology, University of Dhaka, Dhaka-1000, Bangladesh.
+- **Funding Statement:**  
+  `Computational infrastructure was supported by the Antigravity Science Programme research grant and institutional facilities of the National Institute of Biotechnology (NIB), Savar, Dhaka, Bangladesh. No external commercial funding was received.`
+- **Conflict of Interest Statement:**  
+  `The authors declare no conflicts of interest.`
+
+---
+
+## 3. Five Non-Conflicted International Suggested Reviewers (Portal Requirement)
+
+Wiley Research Exchange requests **3–5 independent reviewers** outside Bangladesh with no recent co-authorship or institutional overlap with the authors:
+
+1. **Dr. Gert-Jan Jeunen** — Department of Marine Science, University of Otago, Dunedin, New Zealand / Norwegian Research Centre (NORCE), Norway  
+   - *Expertise:* Lead developer of `CRABS` (*Molecular Ecology Resources*, 2023; `10.1111/1755-0998.13741`); metabarcoding reference database curation and *in silico* primer evaluation.
+2. **Dr. François Keck** — Department of Aquatic Ecology, Eawag (Swiss Federal Institute of Aquatic Science and Technology) & University of Zurich, Switzerland  
+   - *Expertise:* Lead author of *"Navigating the seven challenges of taxonomic reference databases in metabarcoding analyses"* (*Molecular Ecology Resources*, 2023; `10.1111/1755-0998.13746`); aquatic eDNA bioinformatics and reference mislabeling.
+3. **Dr. Rupert A. Collins** — Department of Life Sciences, Natural History Museum, London, United Kingdom  
+   - *Expertise:* Architect of `Meta-Fish-Lib` and automated fish barcode/eDNA reference library quality-control pipelines; ichthyofaunal DNA barcoding and cryptic tropical fishes.
+4. **Prof. Masaki Miya** — Natural History Museum and Institute, Chiba, Japan  
+   - *Expertise:* Senior developer of the universal `MiFish` (`12S`) and `MiDeca` (`16S`) metabarcoding primer suites and `MitoFish` reference infrastructure; Indo-Pacific fish eDNA biomonitoring.
+5. **Dr. Matthieu Leray** — Smithsonian Tropical Research Institute (STRI), Panama  
+   - *Expertise:* Lead developer of `MIDORI2` (*Environmental DNA*, 2022) and the `mlCOIintF` (`Leray-COI`) primer set; mitochondrial reference curation and taxonomic assignment benchmarking.
+
+---
+
+## 4. Pre-Upload Final Step (Right After DG Sign-Off)
+1. Obtain verbal/written confirmation of joint corresponding authorship from **Prof. Dr. Md. Sagir Ahmed** using `04_Manuscripts/drafts/BengalFishRef_MER_DG_Review_Draft.pdf` and `00_Roadmap/DG_Briefing_National_BengalFishRef_Initiative.docx`.
+2. Update public Zenodo metadata on record `24299726` (`https://zenodo.org/records/24299726` -> **Edit** -> add `Ahmed, Md. Sagir`, ORCID `0000-0002-3932-8411`, National Institute of Biotechnology & University of Dhaka -> **Publish**) so the Zenodo landing page matches the manuscript's author list 1-to-1.
+3. Upload the files in **Section 1** above to `https://wiley.atyponrex.com/journal/MEN`.
+"""
     (pkg_dir / "00_ScholarOne_Upload_Manifest.md").write_text(manifest_md, encoding="utf-8")
 
     return {
